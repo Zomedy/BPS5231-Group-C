@@ -12,7 +12,7 @@ This project investigates the thermal resilience of data centers under extreme h
 A reference data center was modelled using DesignBuilder and EnergyPlus. An automated Python workflow was developed to generate simulation datasets under varying heatwave and operating conditions. Machine learning surrogate models were then trained and evaluated to predict thermal risk and maximum Data Hall temperature.
 
 The final project also includes an interactive web application for rapid scenario-based predictions.
-
+https://data-center-heatwave-resilience.onrender.com
 
 ## Folder Descriptions
 
