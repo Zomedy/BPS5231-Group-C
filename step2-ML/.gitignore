@@ -1,0 +1,81 @@
+
+# ==========================================
+# Python cache and virtual environments
+# ==========================================
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ==========================================
+# Operating system files
+# ==========================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Local configuration and secrets
+# ==========================================
+
+.env
+.env.*
+!.env.example
+
+# ==========================================
+# EnergyPlus generated outputs
+# ==========================================
+
+**/output/
+
+eplusout.*
+*.eso
+*.mtr
+*.mtd
+*.rdd
+*.bnd
+*.mdd
+*.shd
+
+# ==========================================
+# Large generated simulation case folders
+# ==========================================
+
+adaptive_cases/
+validation_cases/
+stage9_final_cases/
+
+# ==========================================
+# Weather files
+# Redistribution permission must be checked
+# ==========================================
+
+*.epw
+
+# ==========================================
+# Temporary archives and backup files
+# ==========================================
+
+*.zip
+*.7z
+*.rar
+
+*.bak
+*.tmp
+*.log
+
+# ==========================================
+# Microsoft Office temporary files
+# ==========================================
+
+~$*

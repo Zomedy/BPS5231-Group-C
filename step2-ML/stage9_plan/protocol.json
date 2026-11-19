@@ -1,0 +1,11 @@
+{
+  "seed": 94023,
+  "n_general": 10,
+  "n_boundary": 10,
+  "thresholds_C": [
+    27,
+    30,
+    40
+  ],
+  "rule": "Do not retrain, tune, or change thresholds after EnergyPlus results are revealed. Evaluate groups separately. Tmax regression applies only where EnergyPlus Tmax <40C."
+}

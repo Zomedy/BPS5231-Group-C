@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Center Heatwave Resilience Surrogate | 数据中心极端热浪韧性推演系统</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            },
+            risk: {
+              safe: '#10b981',
+              warning: '#f59e0b',
+              failure: '#ef4444'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    input[type=range]::-webkit-slider-thumb {
+      appearance: none;
+      height: 18px;
+      width: 18px;
+      border-radius: 9999px;
+      background: #3b82f6;
+      cursor: pointer;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+    }
+    .badge-safe { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; }
+    .badge-failure { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-brand-500/20">
+          <i data-lucide="server" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            <span data-i18n="appTitle">数据中心极端热浪韧性推演系统</span>
+            <span class="text-xs font-mono font-medium px-2 py-0.5 rounded bg-brand-900/60 text-brand-400 border border-brand-700/50">Surrogate v1.0</span>
+          </h1>
+          <p class="text-xs text-slate-400 hidden sm:block" data-i18n="appSubtitle">基于 EnergyPlus 540组高保真仿真训练的 HistGradientBoosting 代理推演引擎</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- Language Switcher -->
+        <button id="langToggleBtn" onclick="toggleLanguage()" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 transition flex items-center gap-1.5 text-slate-200">
+          <i data-lucide="languages" class="w-3.5 h-3.5"></i>
+          <span id="currentLangLabel">English</span>
+        </button>
+
+        <!-- Status Indicator -->
+        <div id="backendStatus" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-emerald-950/70 text-emerald-400 border border-emerald-800/80">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span data-i18n="statusConnected">引擎就绪</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Non-Sensor Notice Banner -->
+  <div class="bg-amber-950/40 border-b border-amber-800/50 px-4 py-2">
+    <div class="max-w-7xl mx-auto flex items-center justify-between text-xs text-amber-200/90 gap-2">
+      <div class="flex items-center gap-2">
+        <i data-lucide="info" class="w-4 h-4 text-amber-400 shrink-0"></i>
+        <span data-i18n="sensorDisclaimer">
+          声明：本系统为前向快速 What-If 情景推演工具，非真实传感器在线监控。所有输出均基于设定工况的机器学习代理模型预测。
+        </span>
+      </div>
+      <button onclick="this.parentElement.parentElement.remove()" class="text-amber-400 hover:text-white">✕</button>
+    </div>
+  </div>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Left Column: Input Sliders & Presets (5 Cols) -->
+    <div class="lg:col-span-5 space-y-6">
+      
+      <!-- Presets Selector -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <i data-lucide="sliders" class="w-4 h-4 text-brand-400"></i>
+            <span data-i18n="presetScenarios">典型工程工况预设</span>
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <button onclick="applyPreset('baseline')" class="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 transition text-left flex flex-col justify-between">
+            <span class="font-medium text-white" data-i18n="presetBaseline">基准工况 (Baseline)</span>
+            <span class="text-[10px] text-slate-400">ΔT=6°C, 3d, 600W/m²</span>
+          </button>
+          <button onclick="applyPreset('mild')" class="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 transition text-left flex flex-col justify-between">
+            <span class="font-medium text-emerald-400" data-i18n="presetMild">轻度热浪安全态</span>
+            <span class="text-[10px] text-slate-400">ΔT=2°C, 1d, 450W/m²</span>
+          </button>
+          <button onclick="applyPreset('extreme_load')" class="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 transition text-left flex flex-col justify-between">
+            <span class="font-medium text-rose-400" data-i18n="presetExtreme">高密算力极度热浪</span>
+            <span class="text-[10px] text-slate-400">ΔT=9.5°C, 5d, 950W/m²</span>
+          </button>
+          <button onclick="applyPreset('robust')" class="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 transition text-left flex flex-col justify-between">
+            <span class="font-medium text-cyan-400" data-i18n="presetRobust">充裕冗余设防工况</span>
+            <span class="text-[10px] text-slate-400">Ratio=1.3, Tset=21°C</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Parameter Sliders Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-5">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <i data-lucide="gauge" class="w-4 h-4 text-brand-400"></i>
+            <span data-i18n="inputParameters">推演输入特征 (5项参数)</span>
+          </h2>
+          <span class="text-[11px] text-slate-400 font-mono">HistGB Surrogate Validated</span>
+        </div>
+
+        <!-- 1. Heatwave Intensity -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs">
+            <label class="text-slate-300 font-medium" data-i18n="featIntensity">热浪升温强度 (Heatwave Intensity)</label>
+            <div class="flex items-center gap-1 font-mono text-brand-400 font-semibold bg-slate-800 px-2 py-0.5 rounded">
+              <span id="val_Heatwave_Intensity_C">6.0</span> °C
+            </div>
+          </div>
+          <input type="range" id="Heatwave_Intensity_C" min="0" max="10" step="0.1" value="6.0" 
+                 class="w-full bg-slate-800 rounded-lg h-2 appearance-none cursor-pointer" oninput="onInputChange(this)">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>0.0 °C (常态)</span>
+            <span>5.0 °C</span>
+            <span>10.0 °C (极端)</span>
+          </div>
+        </div>
+
+        <!-- 2. Heatwave Duration -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs">
+            <label class="text-slate-300 font-medium" data-i18n="featDuration">热浪持续时间 (Duration)</label>
+            <div class="flex items-center gap-1 font-mono text-brand-400 font-semibold bg-slate-800 px-2 py-0.5 rounded">
+              <span id="val_Heatwave_Duration_day">3</span> <span data-i18n="unitDays">天 (Days)</span>
+            </div>
+          </div>
+          <input type="range" id="Heatwave_Duration_day" min="1" max="5" step="1" value="3" 
+                 class="w-full bg-slate-800 rounded-lg h-2 appearance-none cursor-pointer" oninput="onInputChange(this)">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>1 天 (整数阶)</span>
+            <span>3 天</span>
+            <span>5 天 (持续峰值)</span>
+          </div>
+        </div>
+
+        <!-- 3. IT Load -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs">
+            <label class="text-slate-300 font-medium" data-i18n="featITLoad">机房 IT 负荷密度 (IT Load)</label>
+            <div class="flex items-center gap-1 font-mono text-brand-400 font-semibold bg-slate-800 px-2 py-0.5 rounded">
+              <span id="val_IT_Load_Wm2">600</span> W/m²
+            </div>
+          </div>
+          <input type="range" id="IT_Load_Wm2" min="300" max="1000" step="10" value="600" 
+                 class="w-full bg-slate-800 rounded-lg h-2 appearance-none cursor-pointer" oninput="onInputChange(this)">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>300 W/m² (低密)</span>
+            <span>600 W/m² (标准)</span>
+            <span>1000 W/m² (高密)</span>
+          </div>
+        </div>
+
+        <!-- 4. Capacity Ratio -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs">
+            <label class="text-slate-300 font-medium" data-i18n="featCapacity">额定制冷容量比 (Capacity Ratio)</label>
+            <div class="flex items-center gap-1 font-mono text-brand-400 font-semibold bg-slate-800 px-2 py-0.5 rounded">
+              <span id="val_Capacity_Ratio">1.10</span>
+            </div>
+          </div>
+          <input type="range" id="Capacity_Ratio" min="0.9" max="1.3" step="0.01" value="1.10" 
+                 class="w-full bg-slate-800 rounded-lg h-2 appearance-none cursor-pointer" oninput="onInputChange(this)">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>0.90 (轻度欠配)</span>
+            <span>1.10 (设计裕量)</span>
+            <span>1.30 (高安全裕度)</span>
+          </div>
+        </div>
+
+        <!-- 5. Cooling Setpoint -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs">
+            <label class="text-slate-300 font-medium" data-i18n="featSetpoint">制冷送风设定点 (Cooling Setpoint)</label>
+            <div class="flex items-center gap-1 font-mono text-brand-400 font-semibold bg-slate-800 px-2 py-0.5 rounded">
+              <span id="val_Cooling_Setpoint_C">24.0</span> °C
+            </div>
+          </div>
+          <input type="range" id="Cooling_Setpoint_C" min="20" max="27" step="0.5" value="24.0" 
+                 class="w-full bg-slate-800 rounded-lg h-2 appearance-none cursor-pointer" oninput="onInputChange(this)">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>20.0 °C (强冷)</span>
+            <span>24.0 °C (推荐基准)</span>
+            <span>27.0 °C (ASHRAE上限)</span>
+          </div>
+        </div>
+
+        <!-- Action Row -->
+        <div class="pt-2 flex items-center justify-between border-t border-slate-800">
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="realtimeToggle" checked class="rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-0">
+            <label for="realtimeToggle" class="text-xs text-slate-400" data-i18n="realtimeInference">滑动实时推演</label>
+          </div>
+          <button id="manualPredictBtn" onclick="runInference()" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md transition flex items-center gap-1.5">
+            <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+            <span data-i18n="btnRun">重新推演</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Export Card -->
+      <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between">
+        <div>
+          <h4 class="text-xs font-medium text-slate-300" data-i18n="exportTitle">推演报告导出</h4>
+          <p class="text-[11px] text-slate-500" data-i18n="exportDesc">下载当前输入参数与推演预测详情 JSON</p>
+        </div>
+        <button onclick="exportResultJSON()" class="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs font-medium text-slate-300 flex items-center gap-1.5 transition">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span data-i18n="btnExport">导出 JSON</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Visual Dashboard & Analytics (7 Cols) -->
+    <div class="lg:col-span-7 space-y-6">
+
+      <!-- Extreme Caution Banner (Conditionally Shown) -->
+      <div id="cautionBanner" class="hidden border rounded-2xl p-4 transition-all duration-300 bg-rose-950/40 border-rose-600/70 text-rose-200">
+        <div class="flex items-start gap-3">
+          <div class="w-8 h-8 rounded-xl bg-rose-600/30 flex items-center justify-center shrink-0 border border-rose-500/50">
+            <i data-lucide="alert-triangle" class="w-5 h-5 text-rose-400 animate-pulse"></i>
+          </div>
+          <div class="space-y-1">
+            <h3 class="text-sm font-bold text-rose-300 flex items-center gap-2">
+              <span data-i18n="cautionBannerTitle">模型外推域与失稳极值警示</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200 font-mono">Domain Caution</span>
+            </h3>
+            <p class="text-xs text-rose-200/90 leading-relaxed" data-i18n="cautionBannerText">
+              当前预测触发了失稳态（Failure）或回归模型训练域边界（Tmax >= 40 °C）。回归器仅在 Tmax < 40 °C 的有效子集上拟合，发生热失控或极端超限时，数值温度仅作为探索性参考，不可视作物理设备精确温升。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Row Metrics Cards (Risk Class & Tmax) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        <!-- 1. Risk Class Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-400 uppercase tracking-wider" data-i18n="cardRiskClass">热韧性安全评级</span>
+            <span id="riskBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full badge-safe font-mono tracking-wide">SAFE</span>
+          </div>
+
+          <div class="my-3">
+            <div class="flex items-baseline gap-2">
+              <span id="riskClassName" class="text-3xl font-extrabold text-emerald-400 tracking-tight">Safe</span>
+              <span id="riskClassDesc" class="text-xs text-slate-400">制冷容量充裕</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1" data-i18n="riskThresholdGuide">
+              阈值规则：Safe (&lt;27°C) | Warning (27-&lt;30°C) | Failure (≥30°C)
+            </p>
+          </div>
+
+          <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div id="riskIndicatorBar" class="h-full bg-emerald-500 transition-all duration-500" style="width: 30%"></div>
+          </div>
+        </div>
+
+        <!-- 2. Predicted Tmax Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-400 uppercase tracking-wider" data-i18n="cardTmax">最高空气温度 (Tmax)</span>
+            <i data-lucide="thermometer" class="w-4 h-4 text-brand-400"></i>
+          </div>
+
+          <div class="my-3">
+            <div class="flex items-baseline gap-1.5">
+              <span id="predictedTmax" class="text-3xl font-extrabold font-mono text-white tracking-tight">25.320</span>
+              <span class="text-sm font-semibold text-slate-400">°C</span>
+              <span id="tmaxFahrenheit" class="text-xs font-mono text-slate-500 ml-2">(77.58 °F)</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1" data-i18n="tmaxZoneDesc">
+              新加坡机房 Data Hall 区域空气平均峰值温度
+            </p>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span data-i18n="domainCheckLabel">回归有效性检验:</span>
+            <span id="domainStatusTag" class="text-emerald-400 font-medium">Valid (&lt;40°C)</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Cooling Capacity & Derating Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 class="text-xs font-semibold text-slate-200 flex items-center gap-2">
+            <i data-lucide="fan" class="w-4 h-4 text-cyan-400"></i>
+            <span data-i18n="capacitySectionTitle">制冷系统容量与热浪衰减估算</span>
+          </h3>
+          <span class="text-[10px] text-slate-400 font-mono">Q = f(IT, Ratio, ΔT)</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <span class="text-[11px] text-slate-400" data-i18n="designCapacity">标称设计制冷容量 (Q_design)</span>
+            <div class="text-lg font-bold font-mono text-slate-100 mt-1">
+              <span id="qDesignVal">68.089</span> <span class="text-xs font-normal text-slate-400">kW</span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-0.5">68.089 × (IT_Load / 600)</p>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] text-slate-400" data-i18n="availableCapacity">热浪衰减可用容量 (Q_available)</span>
+              <span id="deratePercent" class="text-[10px] font-mono text-rose-400 font-semibold">-12.0%</span>
+            </div>
+            <div class="text-lg font-bold font-mono text-cyan-400 mt-1">
+              <span id="qAvailableVal">65.910</span> <span class="text-xs font-normal text-slate-400">kW</span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-0.5" data-i18n="derateRule">
+              折减率：每升高 1°C 衰减 2.0%
+            </p>
+          </div>
+        </div>
+
+        <!-- Capacity Visual Progress -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span data-i18n="capacityHealth">制冷裕度平衡态</span>
+            <span id="marginRatioLabel" class="font-mono text-slate-300">0.968</span>
+          </div>
+          <div class="h-2 w-full bg-slate-800 rounded-full overflow-hidden flex">
+            <div id="capacityBar" class="h-full bg-gradient-to-r from-brand-500 to-cyan-400 transition-all duration-500" style="width: 75%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Probability Distribution Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 class="text-xs font-semibold text-slate-200 flex items-center gap-2">
+              <i data-lucide="bar-chart-2" class="w-4 h-4 text-brand-400"></i>
+              <span data-i18n="probSectionTitle">模型输出分类置信分数 (未校准概率)</span>
+            </h3>
+            <p class="text-[10px] text-slate-400 mt-0.5" data-i18n="uncalibratedProbNote">
+              注意：本分数为 HistGradientBoosting 分类器原始预测得分，非真实世界物理故障概率。
+            </p>
+          </div>
+        </div>
+
+        <!-- Custom Prob Bars -->
+        <div class="space-y-3 pt-1">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="font-medium text-emerald-400 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Safe (&lt;27°C)
+              </span>
+              <span id="prob_Safe" class="font-mono text-slate-300">0.954200 (95.4%)</span>
+            </div>
+            <div class="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div id="bar_Safe" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width: 95.4%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="font-medium text-amber-400 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span> Warning (27-&lt;30°C)
+              </span>
+              <span id="prob_Warning" class="font-mono text-slate-300">0.038100 (3.8%)</span>
+            </div>
+            <div class="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div id="bar_Warning" class="h-full bg-amber-500 rounded-full transition-all duration-500" style="width: 3.8%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="font-medium text-rose-400 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-400"></span> Failure (≥30°C)
+              </span>
+              <span id="prob_Failure" class="font-mono text-slate-300">0.007700 (0.8%)</span>
+            </div>
+            <div class="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div id="bar_Failure" class="h-full bg-rose-500 rounded-full transition-all duration-500" style="width: 0.8%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Model Methodology & Academic Assumptions Accordion -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <button onclick="toggleAccordion('methodologyPanel')" class="w-full p-4 text-left flex items-center justify-between text-xs font-semibold text-slate-300 hover:bg-slate-800/50 transition">
+          <span class="flex items-center gap-2">
+            <i data-lucide="book-open" class="w-4 h-4 text-indigo-400"></i>
+            <span data-i18n="modelAssumptionsTitle">模型科学假设、适用边界与 EnergyPlus 映射规范</span>
+          </span>
+          <i id="accordionIcon" data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div id="methodologyPanel" class="hidden px-5 pb-5 text-xs text-slate-400 border-t border-slate-800/80 space-y-3 pt-3">
+          <ul class="list-disc list-inside space-y-2 leading-relaxed">
+            <li><strong class="text-slate-200" data-i18n="itemGeogTitle">典型气象年配置</strong>：基于新加坡 (IWEC Singapore Changi) 典型热带热浪模型构建（以 5 月 21 日极端高温事件为中心注入阶跃升温）。</li>
+            <li><strong class="text-slate-200" data-i18n="itemThreshTitle">风险分级定义</strong>：Safe &lt;27 °C、Warning 27–&lt;30 °C、Failure ≥30 °C 系研究用临时工程分类阈值，非通用设备制造商担保值。</li>
+            <li><strong class="text-slate-200" data-i18n="itemDomainTitle">回归截断范围</strong>：Tmax 回归模型剔除了样本集中 $T_{\max} \ge 40$ °C 的极度热失控样本（防过拟合与数值溢出），在失稳工况下需以分类器研判为主。</li>
+            <li><strong class="text-slate-200" data-i18n="itemDerateTitle">容量衰减假说</strong>：室外机冷凝制冷量衰减假设公式为 $Q_{\text{available}} = Q_{\text{design}} \times \text{Capacity\_Ratio} \times (1 - 0.02 \times \Delta T)$。</li>
+            <li><strong class="text-slate-200" data-i18n="itemInferenceTitle">冻结推理机制</strong>：Stage 9 冻结直接推理，后端仅执行 Scikit-Learn 预构建管道，不发生在线训练与重采样。</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/80 py-4 bg-slate-950 text-slate-500 text-xs text-center">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <span>Frozen ML Surrogate Pipeline (Stage 9) · EnergyPlus Thermal Resilience</span>
+      <span>Features: Heatwave Intensity, Duration, IT Load, Capacity Ratio, Setpoint</span>
+    </div>
+  </footer>
+
+  <!-- Bilingual & Application Logic Script -->
+  <script>
+    // i18n Dictionary
+    const i18n = {
+      zh: {
+        appTitle: "数据中心极端热浪韧性推演系统",
+        appSubtitle: "基于 EnergyPlus 540组高保真仿真训练的 HistGradientBoosting 代理推演引擎",
+        sensorDisclaimer: "声明：本系统为前向快速 What-If 情景推演工具，非真实传感器在线监控。所有输出均基于设定工况的机器学习代理模型预测。",
+        statusConnected: "引擎就绪",
+        presetScenarios: "典型工程工况预设",
+        presetBaseline: "基准工况 (Baseline)",
+        presetMild: "轻度热浪安全态",
+        presetExtreme: "高密算力极度热浪",
+        presetRobust: "充裕冗余设防工况",
+        inputParameters: "推演输入特征 (5项参数)",
+        featIntensity: "热浪升温强度 (Heatwave Intensity)",
+        featDuration: "热浪持续时间 (Duration)",
+        unitDays: "天 (Days)",
+        featITLoad: "机房 IT 负荷密度 (IT Load)",
+        featCapacity: "额定制冷容量比 (Capacity Ratio)",
+        featSetpoint: "制冷送风设定点 (Cooling Setpoint)",
+        realtimeInference: "滑动实时推演",
+        btnRun: "重新推演",
+        exportTitle: "推演报告导出",
+        exportDesc: "下载当前输入参数与推演预测详情 JSON",
+        btnExport: "导出 JSON",
+        cautionBannerTitle: "模型外推域与失稳极值警示",
+        cautionBannerText: "当前预测触发了失稳态（Failure）或回归模型训练域边界（Tmax >= 40 °C）。回归器仅在 Tmax < 40 °C 的有效子集上拟合，发生热失控或极端超限时，数值温度仅作为探索性参考，不可视作物理设备精确温升。",
+        cardRiskClass: "热韧性安全评级",
+        cardTmax: "最高空气温度 (Tmax)",
+        tmaxZoneDesc: "新加坡机房 Data Hall 区域空气平均峰值温度",
+        domainCheckLabel: "回归有效性检验:",
+        capacitySectionTitle: "制冷系统容量与热浪衰减估算",
+        designCapacity: "标称设计制冷容量 (Q_design)",
+        availableCapacity: "热浪衰减可用容量 (Q_available)",
+        derateRule: "折减率：每升高 1°C 衰减 2.0%",
+        capacityHealth: "制冷裕度平衡态",
+        probSectionTitle: "模型输出分类置信分数 (未校准概率)",
+        uncalibratedProbNote: "注意：本分数为 HistGradientBoosting 分类器原始预测得分，非真实世界物理故障概率。",
+        riskThresholdGuide: "阈值规则：Safe (<27°C) | Warning (27-<30°C) | Failure (≥30°C)",
+        modelAssumptionsTitle: "模型科学假设、适用边界与 EnergyPlus 映射规范",
+        itemGeogTitle: "典型气象年配置",
+        itemThreshTitle: "风险分级定义",
+        itemDomainTitle: "回归截断范围",
+        itemDerateTitle: "容量衰减假说",
+        itemInferenceTitle: "冻结推理机制",
+        riskDescSafe: "制冷容量充裕",
+        riskDescWarning: "出现热应力预警",
+        riskDescFailure: "制冷失稳热失控"
+      },
+      en: {
+        appTitle: "Data Center Heatwave Resilience Surrogate",
+        appSubtitle: "HistGradientBoosting surrogate engine trained on 540 high-fidelity EnergyPlus simulations",
+        sensorDisclaimer: "Notice: This is a fast what-if scenario surrogate, not a real-time physical sensor reading. Outputs are machine learning predictions for evaluated scenarios.",
+        statusConnected: "Engine Ready",
+        presetScenarios: "Engineering Preset Scenarios",
+        presetBaseline: "Baseline Scenario",
+        presetMild: "Mild Wave / Safe",
+        presetExtreme: "Extreme Heat / Dense IT",
+        presetRobust: "Over-provisioned Resilient",
+        inputParameters: "Input Features (5 Core Variables)",
+        featIntensity: "Heatwave Intensity (ΔT)",
+        featDuration: "Heatwave Duration",
+        unitDays: "Day(s)",
+        featITLoad: "IT Equipment Density",
+        featCapacity: "Cooling Capacity Ratio",
+        featSetpoint: "Cooling Setpoint Temp",
+        realtimeInference: "Live auto-inference",
+        btnRun: "Run Predict",
+        exportTitle: "Export Report",
+        exportDesc: "Download current parameters and prediction results as JSON",
+        btnExport: "Export JSON",
+        cautionBannerTitle: "Operational Domain & Instability Caution",
+        cautionBannerText: "The current scenario triggers a Failure classification or exceeds the regressor's domain boundary (Tmax >= 40 °C). The temperature model was trained only on cases with Tmax < 40 °C. For predicted failures, treat Tmax as exploratory only.",
+        cardRiskClass: "Resilience Risk Tier",
+        cardTmax: "Zone Max Temp (Tmax)",
+        tmaxZoneDesc: "Singapore Data Hall Zone Mean Air Maximum Temperature",
+        domainCheckLabel: "Domain Applicability:",
+        capacitySectionTitle: "Cooling Capacity & Heatwave Derating",
+        designCapacity: "Nominal Design Capacity (Q_design)",
+        availableCapacity: "Derated Available Capacity (Q_available)",
+        derateRule: "Derate model: 2.0% loss per 1 °C outdoor increase",
+        capacityHealth: "Cooling Margin State",
+        probSectionTitle: "Uncalibrated Model Class Scores",
+        uncalibratedProbNote: "Note: Scores reflect internal classifier margins, not calibrated real-world failure probabilities.",
+        riskThresholdGuide: "Provisional criteria: Safe (<27°C) | Warning (27-<30°C) | Failure (≥30°C)",
+        modelAssumptionsTitle: "Scientific Assumptions, Limitations & EnergyPlus Context",
+        itemGeogTitle: "Weather Context",
+        itemThreshTitle: "Risk Thresholds",
+        itemDomainTitle: "Tmax Boundary",
+        itemDerateTitle: "Capacity Derating",
+        itemInferenceTitle: "Frozen Pipeline",
+        riskDescSafe: "Adequate Cooling Reserve",
+        riskDescWarning: "Thermal Stress Elevated",
+        riskDescFailure: "Cooling Runaway / Failure"
+      }
+    };
+
+    let currentLang = 'zh';
+    let debounceTimer = null;
+    let latestPredictionData = null;
+
+    // Presets definitions
+    const presets = {
+      baseline: { Heatwave_Intensity_C: 6.0, Heatwave_Duration_day: 3, IT_Load_Wm2: 600, Capacity_Ratio: 1.10, Cooling_Setpoint_C: 24.0 },
+      mild: { Heatwave_Intensity_C: 2.0, Heatwave_Duration_day: 1, IT_Load_Wm2: 450, Capacity_Ratio: 1.20, Cooling_Setpoint_C: 22.0 },
+      extreme_load: { Heatwave_Intensity_C: 9.5, Heatwave_Duration_day: 5, IT_Load_Wm2: 950, Capacity_Ratio: 0.95, Cooling_Setpoint_C: 26.5 },
+      robust: { Heatwave_Intensity_C: 5.0, Heatwave_Duration_day: 4, IT_Load_Wm2: 500, Capacity_Ratio: 1.30, Cooling_Setpoint_C: 21.0 }
+    };
+
+    function toggleLanguage() {
+      currentLang = currentLang === 'zh' ? 'en' : 'zh';
+      document.getElementById('currentLangLabel').textContent = currentLang === 'zh' ? 'English' : '中文';
+      
+      // Update all data-i18n elements
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (i18n[currentLang][key]) {
+          el.innerHTML = i18n[currentLang][key];
+        }
+      });
+
+      // Update dynamic risk descriptions
+      if (latestPredictionData) {
+        updateUIWithPrediction(latestPredictionData);
+      }
+    }
+
+    function applyPreset(name) {
+      const cfg = presets[name];
+      if (!cfg) return;
+      for (const [key, val] of Object.entries(cfg)) {
+        const input = document.getElementById(key);
+        if (input) {
+          input.value = val;
+          const display = document.getElementById('val_' + key);
+          if (display) display.textContent = Number(val).toFixed(key === 'Heatwave_Duration_day' || key === 'IT_Load_Wm2' ? 0 : (key === 'Capacity_Ratio' ? 2 : 1));
+        }
+      }
+      runInference();
+    }
+
+    function onInputChange(el) {
+      const id = el.id;
+      const val = parseFloat(el.value);
+      const display = document.getElementById('val_' + id);
+      if (display) {
+        display.textContent = val.toFixed(id === 'Heatwave_Duration_day' || id === 'IT_Load_Wm2' ? 0 : (id === 'Capacity_Ratio' ? 2 : 1));
+      }
+
+      if (document.getElementById('realtimeToggle').checked) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(runInference, 150);
+      }
+    }
+
+    function getInputs() {
+      return {
+        Heatwave_Intensity_C: parseFloat(document.getElementById('Heatwave_Intensity_C').value),
+        Heatwave_Duration_day: parseInt(document.getElementById('Heatwave_Duration_day').value),
+        IT_Load_Wm2: parseFloat(document.getElementById('IT_Load_Wm2').value),
+        Capacity_Ratio: parseFloat(document.getElementById('Capacity_Ratio').value),
+        Cooling_Setpoint_C: parseFloat(document.getElementById('Cooling_Setpoint_C').value)
+      };
+    }
+
+    async function runInference() {
+      const payload = getInputs();
+      try {
+        const res = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          alert("Error: " + (err.detail || "Prediction failed"));
+          return;
+        }
+
+        const data = await res.json();
+        latestPredictionData = data;
+        updateUIWithPrediction(data);
+      } catch (e) {
+        console.error("Backend offline or request failed", e);
+      }
+    }
+
+    function updateUIWithPrediction(data) {
+      // 1. Risk Class Styling
+      const risk = data.predicted_risk_class;
+      const riskBadge = document.getElementById('riskBadge');
+      const riskName = document.getElementById('riskClassName');
+      const riskDesc = document.getElementById('riskClassDesc');
+      const riskBar = document.getElementById('riskIndicatorBar');
+
+      riskBadge.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full font-mono tracking-wide ';
+      riskName.textContent = risk;
+
+      if (risk === 'Safe') {
+        riskBadge.classList.add('badge-safe');
+        riskName.className = 'text-3xl font-extrabold text-emerald-400 tracking-tight';
+        riskDesc.textContent = i18n[currentLang].riskDescSafe;
+        riskBar.className = 'h-full bg-emerald-500 transition-all duration-500';
+        riskBar.style.width = '33%';
+      } else if (risk === 'Warning') {
+        riskBadge.classList.add('badge-warning');
+        riskName.className = 'text-3xl font-extrabold text-amber-400 tracking-tight';
+        riskDesc.textContent = i18n[currentLang].riskDescWarning;
+        riskBar.className = 'h-full bg-amber-500 transition-all duration-500';
+        riskBar.style.width = '66%';
+      } else {
+        riskBadge.classList.add('badge-failure');
+        riskName.className = 'text-3xl font-extrabold text-rose-400 tracking-tight';
+        riskDesc.textContent = i18n[currentLang].riskDescFailure;
+        riskBar.className = 'h-full bg-rose-500 transition-all duration-500';
+        riskBar.style.width = '100%';
+      }
+
+      // 2. Tmax
+      const tmax = data.predicted_tmax_c;
+      document.getElementById('predictedTmax').textContent = Number(tmax).toFixed(3);
+      const fahrenheit = (tmax * 9 / 5 + 32).toFixed(2);
+      document.getElementById('tmaxFahrenheit').textContent = `(${fahrenheit} °F)`;
+
+      // Caution Banner check
+      const cautionBanner = document.getElementById('cautionBanner');
+      const domainStatus = document.getElementById('domainStatusTag');
+      if (data.tmax_operational_domain_caution) {
+        cautionBanner.classList.remove('hidden');
+        domainStatus.textContent = 'Caution (Extreme/Failure)';
+        domainStatus.className = 'text-rose-400 font-medium';
+      } else {
+        cautionBanner.classList.add('hidden');
+        domainStatus.textContent = 'Valid (<40°C)';
+        domainStatus.className = 'text-emerald-400 font-medium';
+      }
+
+      // 3. Capacities
+      document.getElementById('qDesignVal').textContent = Number(data.design_capacity_kw).toFixed(3);
+      document.getElementById('qAvailableVal').textContent = Number(data.available_capacity_kw).toFixed(3);
+      
+      const derateVal = (data.inputs.Heatwave_Intensity_C * 2.0).toFixed(1);
+      document.getElementById('deratePercent').textContent = `-${derateVal}%`;
+
+      const ratio = (data.available_capacity_kw / data.design_capacity_kw).toFixed(3);
+      document.getElementById('marginRatioLabel').textContent = ratio;
+      const barPct = Math.min(Math.max((data.available_capacity_kw / (data.design_capacity_kw * 1.3)) * 100, 10), 100);
+      document.getElementById('capacityBar').style.width = `${barPct}%`;
+
+      // 4. Probabilities
+      const probs = data.risk_class_probabilities_uncalibrated || {};
+      ['Safe', 'Warning', 'Failure'].forEach(k => {
+        const val = probs[k] !== undefined ? probs[k] : 0;
+        const pct = (val * 100).toFixed(1);
+        const labelEl = document.getElementById('prob_' + k);
+        const barEl = document.getElementById('bar_' + k);
+        if (labelEl) labelEl.textContent = `${Number(val).toFixed(6)} (${pct}%)`;
+        if (barEl) barEl.style.width = `${pct}%`;
+      });
+    }
+
+    function toggleAccordion(id) {
+      const panel = document.getElementById(id);
+      const icon = document.getElementById('accordionIcon');
+      if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        icon.classList.add('rotate-180');
+      } else {
+        panel.classList.add('hidden');
+        icon.classList.remove('rotate-180');
+      }
+    }
+
+    function exportResultJSON() {
+      if (!latestPredictionData) return;
+      const blob = new Blob([JSON.stringify(latestPredictionData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `datacenter_heatwave_prediction_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      runInference();
+    });
+  </script>
+</body>
+</html>
